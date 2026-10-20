@@ -172,7 +172,6 @@ zabbix_agentd -t system.cpu.load[all,avg1]
 | **`SSL alert number 40`** | Ключ или identity PSK не совпадают | Сверьте PSK identity и сам ключ в веб-интерфейсе и конфиге. Проверьте длину файла PSK: `wc -c /etc/zabbix/zabbix_agentd.psk` (должно быть `64`). |
 | **`user postgres does not exist`** | Не установлен PostgreSQL | Выполните `sudo apt install -y postgresql`. |
 | **Хост "Not available"** | Агент не отвечает или закрыт порт | С сервера: `telnet 192.168.200.34 10050`. На агенте: `systemctl status zabbix-agent`, логи `/var/log/zabbix/zabbix_agentd.log`. |
-```
 
 ---
 
