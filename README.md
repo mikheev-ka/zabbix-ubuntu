@@ -1,101 +1,87 @@
-# Развёртывание Zabbix 7.0 LTS на Ubuntu 24.04 (с Zabbix Agent 1)
+# Развёртывание Zabbix 7.0 LTS на Ubuntu 24.04
 
-Данное руководство описывает развёртывание Zabbix 7.0 LTS на Ubuntu 24.04 LTS в изолированной лабораторной среде на базе VirtualBox. В качестве агентов на целевых хостах используется классический **Zabbix Agent 1**, обеспечивающий стабильную работу и простоту настройки.
+Данный раздел описывает развёртывание Zabbix 7.0 LTS в изолированной лабораторной среде на базе VirtualBox. В качестве агентов на целевых хостах используется классический **Zabbix Agent 1** (пассивные проверки + PSK-шифрование).
 
-## Архитектура лабораторного стенда
+## 🗺 Архитектура стенда
 
-Схема сети соответствует топологии: доступ в интернет через NAT (DC01), внутренняя сеть `Host-Only` для виртуальных машин.
+Все хосты находятся в единой сети `192.168.200.0/24`. Шлюзом и DNS-сервером выступает `DC01` (192.168.200.10).
 
 | Хостнейм | IP-адрес | Роль | Устанавливаемое ПО |
 | :--- | :--- | :--- | :--- |
-| **LINUX-ZABBIX-01** | 192.168.200.30 | Сервер мониторинга | Zabbix Server, Frontend, Agent 1, PostgreSQL, Nginx |
+| **LINUX-ZABBIX-01** | 192.168.200.30 | Сервер мониторинга | Zabbix Server, Frontend, Agent 1, PostgreSQL, Nginx, PHP-FPM |
 | **LINUX-NODE-1** | 192.168.200.34 | Целевой хост 1 | Zabbix Agent 1 |
 | **LINUX-NODE-2** | 192.168.200.35 | Целевой хост 2 | Zabbix Agent 1 |
 
-**Особенности сети:** Все хосты находятся в сети `192.168.200.0/24`. Шлюзом и DNS-сервером выступает `DC01` (192.168.200.10). Прямая сетевая связность между сервером и агентами гарантирована.
-
-**Требования к серверу:** минимум 2 ядра CPU, 2 ГБ RAM, 20 ГБ диска.
-
+**Требования к серверу Zabbix:** минимум 2 ядра CPU, 2 ГБ RAM, 20 ГБ диска.
 **Открываемые порты (UFW):**
-- На сервере Zabbix: **80/tcp** (веб-интерфейс), **10051/tcp** (приём данных от агентов, если используются активные проверки).
-- На целевых хостах: **10050/tcp** (для пассивных проверок сервером).
+- На сервере Zabbix: **80/tcp** (веб-интерфейс), **10051/tcp** (приём данных).
+- На целевых хостах: **10050/tcp** (для пассивных проверок сервером, доступ только с IP `.30`).
 
-Перед началом работ на всех хостах обновите систему:
-```bash
-sudo apt update && sudo apt upgrade -y
-```
+> ⚠️ Перед началом работ на всех хостах обновите систему: `sudo apt update && sudo apt upgrade -y`.
 
 ---
 
-## Часть 1. Установка Zabbix Server на хост 192.168.200.30
+## Часть 1. Установка Zabbix Server (192.168.200.30)
 
-### Шаг 1. Подключение официального репозитория Zabbix 7.0 LTS
+> 💡 **Автоматизация:** Вы можете выполнить установку вручную по шагам ниже или запустить готовый скрипт: `sudo ./install_zabbix_server.sh`
 
+### Шаг 1. Подключение репозитория Zabbix 7.0 LTS
 ```bash
 wget https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_7.0+ubuntu24.04_all.deb
 sudo dpkg -i zabbix-release_latest_7.0+ubuntu24.04_all.deb
 sudo apt update
 ```
 
-### Шаг 2. Установка пакетов Zabbix
-
-Устанавливаем сервер, веб-интерфейс, PostgreSQL и классический Agent 1.
-
+### Шаг 2. Установка пакетов
+Устанавливаем Zabbix, а также явно указываем **PostgreSQL**, **Nginx** и **PHP-FPM**, так как зависимости пакетов Zabbix не всегда подтягивают сами сервисы.
 ```bash
-sudo apt install -y zabbix-server-pgsql zabbix-frontend-php php8.3-pgsql zabbix-nginx-conf zabbix-sql-scripts zabbix-agent
+sudo apt install -y postgresql nginx php8.3-fpm \
+                    zabbix-server-pgsql zabbix-frontend-php php8.3-pgsql \
+                    zabbix-nginx-conf zabbix-sql-scripts zabbix-agent
 ```
 
-### Шаг 3. Создание базы данных и пользователя PostgreSQL
-
+### Шаг 3. Создание базы данных и пользователя
 ```bash
 sudo -u postgres createuser --pwprompt zabbix
 sudo -u postgres createdb -O zabbix zabbix
 ```
-Задайте и запомните пароль для пользователя `zabbix`.
+*Задайте и запомните пароль для пользователя `zabbix`.*
 
 ### Шаг 4. Импорт начальной схемы БД
-
-Для Zabbix 7.0 LTS используется следующий путь к SQL-скриптам:
 ```bash
 zcat /usr/share/zabbix-sql-scripts/postgresql/server.sql.gz | sudo -u zabbix psql zabbix
 ```
-При запросе введите пароль пользователя `zabbix`, заданный на Шаге 3.
+*При запросе введите пароль пользователя `zabbix` из Шага 3.*
 
 ### Шаг 5. Настройка Zabbix Server
-
 ```bash
 sudo nano /etc/zabbix/zabbix_server.conf
 ```
-Укажите пароль от базы данных:
+Найдите строку `# DBPassword=` и укажите пароль от БД:
 ```ini
 DBPassword=ваш_пароль_от_zabbix
 ```
 
-### Шаг 6. Настройка Nginx
-
-Пакет `zabbix-nginx-conf` уже размещает конфигурацию в `/etc/nginx/conf.d/zabbix.conf`. Отредактируйте `server_name`, если требуется:
+### Шаг 6. Настройка Nginx и PHP
+Пакет `zabbix-nginx-conf` уже размещает конфигурацию в `/etc/nginx/conf.d/zabbix.conf`.
+Опционально задайте таймзону PHP, чтобы убрать предупреждение в веб-интерфейсе:
 ```bash
-sudo nano /etc/nginx/conf.d/zabbix.conf
+sudo sed -i 's|^;date.timezone =.*|date.timezone = Europe/Moscow|' /etc/php/8.3/fpm/php.ini
 ```
 
-### Шаг 7. Запуск служб
-
+### Шаг 7. Запуск служб и настройка UFW
 ```bash
 sudo systemctl restart zabbix-server zabbix-agent nginx php8.3-fpm
 sudo systemctl enable zabbix-server zabbix-agent nginx php8.3-fpm
-```
 
-### Шаг 8. Настройка файрвола UFW
-
-```bash
 sudo ufw allow 80/tcp
 sudo ufw allow 10051/tcp
+sudo ufw --force enable
 sudo ufw reload
 ```
 
-### Шаг 9. Завершение установки через веб-интерфейс
-
-Откройте браузер и перейдите по адресу `http://192.168.200.30`. Пройдите мастер установки, указав параметры БД:
+### Шаг 8. Завершение установки через веб-интерфейс
+Перейдите по адресу `http://192.168.200.30`. Пройдите мастер, указав:
 - **Database host:** `localhost`
 - **Database name:** `zabbix`
 - **User:** `zabbix`
@@ -105,12 +91,13 @@ sudo ufw reload
 
 ---
 
-## Часть 2. Установка и настройка Zabbix Agent 1 на целевых хостах
+## Часть 2. Установка Zabbix Agent 1 (192.168.200.34 и .35)
 
-Все шаги выполняются **на каждом целевом хосте** (`192.168.200.34` и `192.168.200.35`) независимо.
+> 💡 **Автоматизация:** На каждом хосте можно запустить: `sudo ./install_zabbix_agent.sh 192.168.200.30 <HOSTNAME>` (например, `LINUX-NODE-1`)
 
-### Шаг 1. Подключение репозитория и установка Agent 1
+Выполняется **на каждом** целевом хосте.
 
+### Шаг 1. Установка агента
 ```bash
 wget https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_7.0+ubuntu24.04_all.deb
 sudo dpkg -i zabbix-release_latest_7.0+ubuntu24.04_all.deb
@@ -118,97 +105,227 @@ sudo apt update
 sudo apt install -y zabbix-agent
 ```
 
-### Шаг 2. Настройка конфигурации агента
-
-Откройте файл конфигурации (обратите внимание, у Agent 1 он называется `zabbix_agentd.conf`):
+### Шаг 2. Настройка конфигурации
+Откройте `/etc/zabbix/zabbix_agentd.conf`:
 ```bash
 sudo nano /etc/zabbix/zabbix_agentd.conf
 ```
-
-#### 2.1. Режим проверок и адрес сервера
-
-Для лабораторного стенда используем **пассивные проверки** — сервер Zabbix сам опрашивает агентов. Это самый простой и надежный путь.
-
-Укажите IP-адрес Zabbix Server в параметре `Server`:
+Укажите IP сервера и **точное** имя хоста (совпадающее с тем, что вы создадите в веб-интерфейсе):
 ```ini
-### Option: Server
 Server=192.168.200.30
-```
-
-#### 2.2. Критически важный параметр Hostname
-
-Параметр `Hostname` должен **точно совпадать** с именем хоста, которое вы создадите в веб-интерфейсе Zabbix. Регистр имеет значение.
-
-```ini
-### Option: Hostname
 Hostname=LINUX-NODE-1
 ```
-(Для второго хоста соответственно: `Hostname=LINUX-NODE-2`.)
+*(Для второго хоста: `Hostname=LINUX-NODE-2`)*.
 
-### Шаг 3. Шифрование трафика с помощью PSK
-
-Сгенерируйте ключ на **каждом** агенте отдельно:
+### Шаг 3. Шифрование PSK
+Сгенерируйте ключ на **каждом** агенте (флаг `tr -d '\n'` убирает перевод строки, предотвращая ошибку `SSL alert number 40`):
 ```bash
-openssl rand -hex 32 | sudo tee /etc/zabbix/zabbix_agentd.psk
+openssl rand -hex 32 | tr -d '\n' | sudo tee /etc/zabbix/zabbix_agentd.psk
 sudo chown zabbix:zabbix /etc/zabbix/zabbix_agentd.psk
 sudo chmod 600 /etc/zabbix/zabbix_agentd.psk
 ```
 
-Добавьте в конец файла `/etc/zabbix/zabbix_agentd.conf`:
+Добавьте в конец файла `zabbix_agentd.conf`:
 ```ini
 TLSConnect=psk
 TLSAccept=psk
 TLSPSKIdentity=PSK LINUX-NODE-1
 TLSPSKFile=/etc/zabbix/zabbix_agentd.psk
 ```
-`TLSPSKIdentity` должен быть уникальным для каждого хоста (для Node-2 используйте `PSK LINUX-NODE-2`).
 
-### Шаг 4. Файрвол UFW
-
-Поскольку используются пассивные проверки, откройте порт 10050, ограничив доступ только IP-адресом сервера:
+### Шаг 4. UFW и запуск
 ```bash
 sudo ufw allow from 192.168.200.30 to any port 10050 proto tcp
-```
-
-### Шаг 5. Запуск и проверка агента
-
-```bash
+sudo ufw --force enable
 sudo systemctl restart zabbix-agent
 sudo systemctl enable zabbix-agent
-systemctl status zabbix-agent --no-pager
 ```
 
-Проверьте сбор метрик локально:
+Проверка метрик локально:
 ```bash
 zabbix_agentd -t system.cpu.load[all,avg1]
 ```
-Успешный ответ (например, `[d|0.000000]`) подтвердит, что агент работает.
 
 ---
 
 ## Часть 3. Добавление хостов в Zabbix Frontend
 
-1.  В веб-интерфейсе перейдите в **Data collection → Hosts** и нажмите **Create host**.
-2.  Укажите **Host name**, которое **точно совпадает** с параметром `Hostname` в конфигурации агента (например, `LINUX-NODE-1`).
-3.  В поле **Interfaces** добавьте агентский интерфейс с IP-адресом целевого хоста (например, `192.168.200.34`) и портом `10050`.
-4.  Привяжите шаблон **Linux by Zabbix agent**.
-5.  Перейдите на вкладку **Encryption** и укажите:
-    - **Connections to host:** `PSK`
-    - **Connections from host:** `PSK`
-    - **PSK identity:** тот же идентификатор, что в `TLSPSKIdentity` агента (например, `PSK LINUX-NODE-1`).
-    - **PSK:** вставьте содержимое файла `/etc/zabbix/zabbix_agentd.psk` с агента.
-6.  Нажмите **Add**. Через 1–2 минуты на вкладке **Monitoring → Latest data** появятся первые метрики.
-
-Повторите Часть 2 и Часть 3 для второго хоста (`192.168.200.35`), заменив `Hostname`, `TLSPSKIdentity` и IP-адрес.
+1. Перейдите в **Data collection → Hosts** → **Create host**.
+2. **Host name**: `LINUX-NODE-1` (точно как в конфиге).
+3. **Interfaces**: добавьте Agent, IP `192.168.200.34`, порт `10050`.
+4. **Templates**: привяжите `Linux by Zabbix agent`.
+5. **Encryption**:
+   - Connections to host: `PSK`
+   - Connections from host: `PSK`
+   - PSK identity: `PSK LINUX-NODE-1`
+   - PSK: вставьте содержимое файла `/etc/zabbix/zabbix_agentd.psk` с агента.
+6. Нажмите **Add**. Через 1–2 минуты данные появятся в **Monitoring → Latest data**.
 
 ---
 
-## Возможные проблемы и способы их решения
+## 🛠 Возможные проблемы и решения
 
 | Проблема | Вероятная причина | Решение |
 | :--- | :--- | :--- |
-| **Zabbix Server не запускается** (`status=1`) | Неверный пароль БД или PostgreSQL недоступен | Проверьте `DBPassword` в `/etc/zabbix/zabbix_server.conf`. Логи: `journalctl -u zabbix-server -n 50`. |
-| **Ошибка 502 Bad Gateway** | PHP-FPM не запущен | Проверьте статус `php8.3-fpm`. Убедитесь, что в `/etc/nginx/conf.d/zabbix.conf` сокет указан верно (`unix:/run/php/php8.3-fpm.sock`). |
-| **`SSL alert number 40`** | Ключ или идентификатор PSK не совпадают | Убедитесь, что на вкладке **Encryption** хоста указаны те же `PSK identity` и значение `PSK`, что и в конфигурации агента. Проверьте, нет ли лишнего перевода строки в PSK-файле (можно использовать `truncate -s 64 /etc/zabbix/zabbix_agentd.psk`). |
-| **`connection refused` на агенте** | Служба остановлена или порт 10050 закрыт | Проверьте `systemctl status zabbix-agent`. Убедитесь, что UFW разрешает доступ с IP сервера: `sudo ufw allow from 192.168.200.30 to any port 10050 proto tcp`. |
-| **Хост в статусе “Not available”** | Агент не отвечает | С сервера проверьте доступность: `telnet 192.168.200.34 10050`. На агенте проверьте конфигурацию и логи (`/var/log/zabbix/zabbix_agentd.log`). |
+| **Zabbix Server не запускается** | Неверный пароль БД или PostgreSQL недоступен | Проверьте `DBPassword`. Логи: `journalctl -u zabbix-server -n 50`. Статус БД: `systemctl status postgresql`. |
+| **502 Bad Gateway** | PHP-FPM не запущен | Проверьте `systemctl status php8.3-fpm`. В `/etc/nginx/conf.d/zabbix.conf` сокет должен быть `unix:/run/php/php8.3-fpm.sock`. |
+| **`SSL alert number 40`** | Ключ или identity PSK не совпадают | Сверьте PSK identity и сам ключ в веб-интерфейсе и конфиге. Проверьте длину файла PSK: `wc -c /etc/zabbix/zabbix_agentd.psk` (должно быть `64`). |
+| **`user postgres does not exist`** | Не установлен PostgreSQL | Выполните `sudo apt install -y postgresql`. |
+| **Хост "Not available"** | Агент не отвечает или закрыт порт | С сервера: `telnet 192.168.200.34 10050`. На агенте: `systemctl status zabbix-agent`, логи `/var/log/zabbix/zabbix_agentd.log`. |
+```
+
+---
+
+### Файл `zabbix/install_zabbix_server.sh`
+
+```bash
+#!/bin/bash
+# Установка Zabbix Server 7.0 LTS на Ubuntu 24.04 (IP: 192.168.200.30)
+# Требует прав root (sudo)
+# Использование: sudo ./install_zabbix_server.sh [DB_PASSWORD] [TIMEZONE]
+
+set -euo pipefail
+
+if [ "$EUID" -ne 0 ]; then
+  echo "Пожалуйста, запустите с sudo: sudo ./install_zabbix_server.sh"
+  exit 1
+fi
+
+DB_PASSWORD="${1:-$(openssl rand -hex 16)}"
+TIMEZONE="${2:-Europe/Moscow}"
+
+echo "=== Обновление списка пакетов ==="
+apt update
+
+echo "=== Подключение официального репозитория Zabbix 7.0 LTS ==="
+cd /tmp
+wget -q --show-progress https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_7.0+ubuntu24.04_all.deb
+dpkg -i zabbix-release_latest_7.0+ubuntu24.04_all.deb
+apt update
+
+echo "=== Установка пакетов ==="
+apt install -y postgresql nginx php8.3-fpm \
+               zabbix-server-pgsql zabbix-frontend-php php8.3-pgsql \
+               zabbix-nginx-conf zabbix-sql-scripts zabbix-agent
+
+echo "=== Настройка таймзоны PHP ==="
+PHP_INI=/etc/php/8.3/fpm/php.ini
+if [ -f "${PHP_INI}" ]; then
+  sed -i "s|^;date.timezone =.*|date.timezone = ${TIMEZONE}|; s|^date.timezone =.*|date.timezone = ${TIMEZONE}|" "${PHP_INI}"
+fi
+
+echo "=== Создание БД и пользователя ==="
+if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='zabbix'" | grep -q 1; then
+  sudo -u postgres psql -c "ALTER USER zabbix WITH PASSWORD '${DB_PASSWORD}';"
+else
+  sudo -u postgres psql -c "CREATE USER zabbix WITH PASSWORD '${DB_PASSWORD}';"
+fi
+
+if sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='zabbix'" | grep -q 1; then
+  echo "База zabbix уже существует — пропускаем."
+else
+  sudo -u postgres createdb -O zabbix zabbix
+fi
+
+echo "=== Импорт схемы БД (если не импортирована) ==="
+if PGPASSWORD="${DB_PASSWORD}" psql -h localhost -U zabbix -d zabbix \
+     -tAc "SELECT 1 FROM information_schema.tables WHERE table_name='users'" | grep -q 1; then
+  echo "Схема уже импортирована."
+else
+  zcat /usr/share/zabbix-sql-scripts/postgresql/server.sql.gz | \
+    PGPASSWORD="${DB_PASSWORD}" psql -h localhost -U zabbix -d zabbix
+fi
+
+echo "=== Настройка zabbix_server.conf ==="
+ZBX_CONF=/etc/zabbix/zabbix_server.conf
+if grep -q "^DBPassword=" "${ZBX_CONF}"; then
+  sed -i "s|^DBPassword=.*|DBPassword=${DB_PASSWORD}|" "${ZBX_CONF}"
+elif grep -q "^# DBPassword=" "${ZBX_CONF}"; then
+  sed -i "s|^# DBPassword=.*|DBPassword=${DB_PASSWORD}|" "${ZBX_CONF}"
+else
+  echo "DBPassword=${DB_PASSWORD}" >> "${ZBX_CONF}"
+fi
+
+echo "=== Запуск служб и настройка UFW ==="
+systemctl restart zabbix-server zabbix-agent nginx php8.3-fpm
+systemctl enable zabbix-server zabbix-agent nginx php8.3-fpm
+
+ufw allow 80/tcp
+ufw allow 10051/tcp
+ufw --force enable
+ufw reload
+
+echo ""
+echo "=== Готово! ==="
+echo "Веб-интерфейс Zabbix: http://192.168.200.30"
+echo "Данные для мастера: DB host: localhost | DB name: zabbix | User: zabbix | Password: ${DB_PASSWORD}"
+echo "Логин по умолчанию: Admin / zabbix"
+```
+
+---
+
+### Файл `zabbix/install_zabbix_agent.sh`
+
+```bash
+#!/bin/bash
+# Установка Zabbix Agent 1 на Ubuntu 24.04 (PSK, пассивные проверки)
+# Требует прав root (sudo)
+# Использование: sudo ./install_zabbix_agent.sh [SERVER_IP] [HOSTNAME] [PSK_IDENTITY]
+
+set -euo pipefail
+
+if [ "$EUID" -ne 0 ]; then
+  echo "Пожалуйста, запустите с sudo."
+  exit 1
+fi
+
+ZABBIX_SERVER="${1:-192.168.200.30}"
+AGENT_HOSTNAME="${2:-$(hostname)}"
+PSK_IDENTITY="${3:-PSK ${AGENT_HOSTNAME}}"
+AGENT_CONF=/etc/zabbix/zabbix_agentd.conf
+PSK_FILE=/etc/zabbix/zabbix_agentd.psk
+
+echo "=== Параметры ==="
+echo "Server: ${ZABBIX_SERVER} | Hostname: ${AGENT_HOSTNAME} | PSK ID: ${PSK_IDENTITY}"
+
+echo "=== Установка репозитория и агента ==="
+cd /tmp
+wget -q --show-progress https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_7.0+ubuntu24.04_all.deb
+dpkg -i zabbix-release_latest_7.0+ubuntu24.04_all.deb
+apt update
+apt install -y zabbix-agent
+
+echo "=== Настройка конфигурации ==="
+sed -i "s|^Server=.*|Server=${ZABBIX_SERVER}|; s|^# Server=.*|Server=${ZABBIX_SERVER}|" "${AGENT_CONF}"
+sed -i "s|^Hostname=.*|Hostname=${AGENT_HOSTNAME}|; s|^# Hostname=.*|Hostname=${AGENT_HOSTNAME}|" "${AGENT_CONF}"
+
+sed -i '/^TLSConnect=/d;/^TLSAccept=/d;/^TLSPSKIdentity=/d;/^TLSPSKFile=/d' "${AGENT_CONF}"
+
+echo "=== Генерация PSK ==="
+openssl rand -hex 32 | tr -d '\n' > "${PSK_FILE}"
+chown zabbix:zabbix "${PSK_FILE}"
+chmod 600 "${PSK_FILE}"
+
+cat >> "${AGENT_CONF}" <<EOF
+
+### TLS PSK
+TLSConnect=psk
+TLSAccept=psk
+TLSPSKIdentity=${PSK_IDENTITY}
+TLSPSKFile=${PSK_FILE}
+EOF
+
+echo "=== UFW и запуск ==="
+ufw allow from ${ZABBIX_SERVER} to any port 10050 proto tcp
+ufw --force enable
+systemctl restart zabbix-agent
+systemctl enable zabbix-agent
+
+echo ""
+echo "=== Готово! ==="
+echo "Параметры для добавления в веб-интерфейс Zabbix:"
+echo "  Host name:  ${AGENT_HOSTNAME}"
+echo "  IP:         $(hostname -I | awk '{print $1}')"
+echo "  PSK ID:     ${PSK_IDENTITY}"
+echo "  PSK Key:    $(cat ${PSK_FILE})"
+```
