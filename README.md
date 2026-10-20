@@ -8,7 +8,7 @@
 
 | Хостнейм | IP-адрес | Роль | Устанавливаемое ПО |
 | :--- | :--- | :--- | :--- |
-| **LINUX-ZABBIX-01** | 192.168.200.30 | Сервер мониторинга | Zabbix Server, Frontend, Agent 1, PostgreSQL, Nginx, PHP-FPM |
+| **LINUX-ZABBIX-01** | 192.168.200.30 | Сервер мониторинга | Zabbix Server, Frontend, Agent, PostgreSQL, Nginx, PHP-FPM |
 | **LINUX-NODE-1** | 192.168.200.34 | Целевой хост 1 | Zabbix Agent 1 |
 | **LINUX-NODE-2** | 192.168.200.35 | Целевой хост 2 | Zabbix Agent 1 |
 
@@ -91,7 +91,7 @@ sudo ufw reload
 
 ---
 
-## Часть 2. Установка Zabbix Agent 1 (192.168.200.34 и .35)
+## Часть 2. Установка Zabbix Agent (192.168.200.34 и .35)
 
 > 💡 **Автоматизация:** На каждом хосте можно запустить: `sudo ./install_zabbix_agent.sh 192.168.200.30 <HOSTNAME>` (например, `LINUX-NODE-1`)
 
