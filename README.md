@@ -4,7 +4,7 @@
 
 ## Архитектура лабораторного стенда
 
-Схема сети соответствует вашей топологии: доступ в интернет через NAT (DC01), внутренняя сеть `Host-Only` для виртуальных машин.
+Схема сети соответствует топологии: доступ в интернет через NAT (DC01), внутренняя сеть `Host-Only` для виртуальных машин.
 
 | Хостнейм | IP-адрес | Роль | Устанавливаемое ПО |
 | :--- | :--- | :--- | :--- |
@@ -39,7 +39,7 @@ sudo apt update
 
 ### Шаг 2. Установка пакетов Zabbix
 
-Устанавливаем сервер, веб-интерфейс, PostgreSQL и классический Agent 1 (пакет `zabbix-agent`).
+Устанавливаем сервер, веб-интерфейс, PostgreSQL и классический Agent 1.
 
 ```bash
 sudo apt install -y zabbix-server-pgsql zabbix-frontend-php php8.3-pgsql zabbix-nginx-conf zabbix-sql-scripts zabbix-agent
@@ -55,17 +55,8 @@ sudo -u postgres createdb -O zabbix zabbix
 
 ### Шаг 4. Импорт начальной схемы БД
 
-Проверьте оба возможных пути к SQL-скриптам:
+Для Zabbix 7.0 LTS используется следующий путь к SQL-скриптам:
 ```bash
-ls /usr/share/zabbix/sql-scripts/postgresql/server.sql.gz
-ls /usr/share/zabbix-sql-scripts/postgresql/server.sql.gz
-```
-Выполните импорт, используя найденный путь:
-```bash
-# Если файл найден по первому пути:
-zcat /usr/share/zabbix/sql-scripts/postgresql/server.sql.gz | sudo -u zabbix psql zabbix
-
-# Если файл найден по второму пути:
 zcat /usr/share/zabbix-sql-scripts/postgresql/server.sql.gz | sudo -u zabbix psql zabbix
 ```
 При запросе введите пароль пользователя `zabbix`, заданный на Шаге 3.
