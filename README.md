@@ -59,7 +59,7 @@ sudo nano /etc/zabbix/zabbix_server.conf
 ```
 Найдите строку `# DBPassword=` и укажите пароль от БД:
 ```ini
-DBPassword=ваш_пароль_от_zabbix
+DBPassword=Qq123456
 ```
 
 ### Шаг 6. Настройка Nginx и PHP
